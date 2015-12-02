@@ -1,154 +1,270 @@
 import java.lang.Integer;
+import java.util.HashMap;
 import java.util.ArrayList;
+import java.util.Collections;
 
-//Token Types. UNDEF = pushback token when nothing's been pushed back, token returned when state is unknown.
-enum Tok { 
-    LPAR, RPAR, TRUE, FALSE, AND, OR, NOT, VARIABLE, EOS, INVALID, UNDEF; 
+// Token Types.
+enum Tok {
+    LPAR,       // '('
+    RPAR,       // ')'
+    TRUE,       // 'T'
+    FALSE,      // 'F'
+    AND,        // '&'
+    OR,         // '|'
+    NOT,        // '~'
+    VARIABLE,   // [a-z]
+    EOS,        // 0
+    INVALID,    // unrecognized character
+    UNDEF;      // value of pushed back token prior to any pushback
 }
 
-class Tokenizer { 
+class Tokenizer {
 
     String in;
-    char[] chars; 
-    int i;
-    char name; //stores function or variable names
-    Tok backToken;
+    char[] chars;   // buffered input characters
+    int i;          // index of current character
+    char name;      // side effect: variable name
+    Tok backToken;  // pushback token
 
-    Tokenizer(String in) { 
+    Tokenizer(String in) {
         this.in  = in;
         name = 0;
         i = 0;
         backToken = Tok.UNDEF;
         chars = new char[in.length()+1];
         for (int k=0; k<in.length(); k++){
-            chars[k]=in.charAt(k);    
+            chars[k]=in.charAt(k);
         }
-        chars[in.length()] = 0; //end with the null byte character, so the Tokenizer knows when the String is done.
+        chars[in.length()] = 0; // end with the null char
     }
 
-    public Tok nextToken() { 
+    public Tok nextToken() {
         Tok t = nextTokenContinued();
         //System.out.println(t);
         return t;
     }
 
-    public Tok nextTokenContinued() { 
-        name = 0;
-        if (backToken !=Tok.UNDEF) {    
-            Tok result = backToken;      
-            backToken = Tok.UNDEF;    
-            return result;             
+    public Tok nextTokenContinued() {
+
+        if (backToken != Tok.UNDEF) {
+            Tok result = backToken;
+            backToken = Tok.UNDEF;
+            return result;
         }
 
-        while (true) { 
-            char c = chars[i++]; 
+        name = 0;
+
+        while (true) {
+            char c = chars[i++];
             if (Character.isWhitespace(c)) continue;
             if (Character.isAlphabetic(c)) {
-                if (c == 't') return Tok.TRUE;
-                else if (c == 'f') return Tok.FALSE;
-                else { 
+                if (c == 'T') return Tok.TRUE;
+                else if (c == 'F') return Tok.FALSE;
+                else {
                     name = c;
-                    return Tok.VARIABLE; 
+                    return Tok.VARIABLE;
                 }
             }
-            else if (c == '^') return Tok.AND;
-            else if (c == '|') return Tok.OR;
-            else if (c == '~') return Tok.NOT;
-            else if (c == '(') return Tok.LPAR;
-            else if (c == ')') return Tok.RPAR;
-            else if (c == 0) return Tok.EOS;
-            else return Tok.INVALID;
+            if (c == '&') return Tok.AND;
+            if (c == '|') return Tok.OR;
+            if (c == '~') return Tok.NOT;
+            if (c == '(') return Tok.LPAR;
+            if (c == ')') return Tok.RPAR;
+            if (c == 0)   return Tok.EOS;
+            return Tok.INVALID;
         }
     }
 }
 
-abstract class Sentence {
-    Sentence left; 
-    Sentence right;
+abstract class Node {
+    Node left;
+    Node right;
 
-    public abstract boolean eval(ArrayList<Character> vars, ArrayList<Boolean> vals) throws Exception; 
+    public abstract boolean eval(HashMap<Character, Boolean> argList) throws Exception;
 
-    void print() { System.out.println(this.toString()); }
+    public abstract void print(int depth);
+
+    public void print() {
+        print(0);
+        System.out.println();
+    }
+
+    public static void printSpaces(int depth) {
+        for (int i=0; i<depth; i++) System.out.print(" ");
+    }
+
+    public boolean eval(HashMap<Character, Boolean> argList, ArrayList<Character> vars, boolean... args) throws Exception {
+        if (args.length != argList.size()) throw new Exception("ERROR: INVALID NUMBER OF ARGUMENTS");
+        for (int i=0; i<vars.size(); i++) {
+            argList.put(vars.get(i), args[i]);
+        }
+        return eval(argList);
+    }
 
 }
 
-class Disjunction extends Sentence {
+class OrNode extends Node {
 
-    public Disjunction(Sentence left, Sentence right) {
+    public OrNode(Node left, Node right) {
         this.left = left;
         this.right = right;
     }
 
-    public boolean eval(ArrayList<Character> vars, ArrayList<Boolean> vals) throws Exception {         
-        boolean x = left.eval(vars, vals);
-        boolean y = right.eval(vars, vals);
+    public boolean eval(HashMap<Character, Boolean> argList) throws Exception {
+        boolean x = left.eval(argList);
+        boolean y = right.eval(argList);
         if (x == true || y == true) return true;
-        else return false;
+        return false;
+    }
+
+    public void print(int depth) {
+        Node.printSpaces(depth);
+        System.out.println("|");
+        left.print(depth+1);
+        System.out.println();
+        right.print(depth+1);
+    }
+
+    public String toString() {
+        return "(" + left.toString() + " | " + right.toString() + ")";
     }
 
 }
 
-class Conjunction extends Sentence { 
+class AndNode extends Node {
 
-    public Conjunction(Sentence left, Sentence right) {
+    public AndNode(Node left, Node right) {
         this.left = left;
         this.right = right;
     }
 
-    public String toString() { 
-        return left.toString() + "^ (" + right.toString() + ")";
-    }
-
-    public boolean eval(ArrayList<Character> vars, ArrayList<Boolean> vals) throws Exception {         
-        boolean x = left.eval(vars, vals);
-        boolean y = right.eval(vars, vals);
+    public boolean eval(HashMap<Character, Boolean> argList) throws Exception {
+        boolean x = left.eval(argList);
+        boolean y = right.eval(argList);
         if (x == true && y == true) return true;
-        else return false;
+        return false;
     }
-    
+
+    public void print(int depth) {
+        Node.printSpaces(depth);
+        System.out.println("&");
+        left.print(depth+1);
+        System.out.println();
+        right.print(depth+1);
+    }
+
+    public String toString() {
+        return "(" + left.toString() + " & " + right.toString() + ")";
+    }
+
 }
+class NotNode extends Node {
+    Node argExpr;
 
-class Not extends Sentence {
-    Sentence argExpr;
-
-    public Not(Sentence argExpr) {
+    public NotNode(Node argExpr) {
+        this.argExpr = argExpr;
         left = null;
         right = null;
-        this.argExpr = argExpr;
     }
 
-    public boolean eval(ArrayList<Character> vars, ArrayList<Boolean> vals) throws Exception {
-        return !argExpr.eval(vars, vals);
+    public boolean eval(HashMap<Character, Boolean> argList) throws Exception {
+        return !argExpr.eval(argList);
     }
 
+    public void print(int depth) {
+        Node.printSpaces(depth);
+        System.out.println("~");
+        argExpr.print(depth+1);
+    }
+
+    public String toString() { return "~(" + argExpr.toString() + ")"; }
 }
 
-class Variable extends Sentence { 
+class VarNode extends Node {
     char name;
 
-    public String toString() { return Character.toString(name); }
-    
-    public boolean eval(ArrayList<Character> vars, ArrayList<Boolean> vals) throws Exception {
-        return vals.get(vars.indexOf(name));
-    }
-    
-    Variable(char name) { 
-        this.name = name; 
+    VarNode(char name) {
+        this.name = name;
         left = null;
-        right = null; 
+        right = null;
     }
 
+    public boolean eval(HashMap<Character, Boolean> argList) throws Exception {
+        if (!argList.containsKey(name)) throw new Exception("ERROR: MISSED VARIABLE");
+        return argList.get(name);
+    }
+
+    public void print(int depth) {
+        Node.printSpaces(depth);
+        System.out.print(name);
+    }
+
+    public String toString() { return Character.toString(name); }
 }
 
-class Constant extends Sentence {
+class ConstNode extends Node {
     boolean status;
 
-    Constant(boolean status) {
+    ConstNode(boolean status) {
         this.status = status;
+        this.left = null;
+        this.right = null;
     }
 
-    public boolean eval(ArrayList<Character> vars, ArrayList<Boolean> vals) throws Exception {
+    public boolean eval(HashMap<Character, Boolean> argList) throws Exception {
         return status;
+    }
+
+    public void print(int depth) {
+        Node.printSpaces(depth);
+        System.out.print(status ? "T" : "F");
+    }
+
+    public String toString() { return (status ? "T" : "F"); };
+}
+
+class BooleanSentenceGenerator {
+
+    Node sent() {
+        Node result = clause();
+        while (Math.random() < 0.33) {
+            result = new OrNode(result, sent());
+        }
+        return result;
+    }
+
+    Node clause() {
+        Node result = atom();
+        while (Math.random() < 0.33) result = new AndNode(result, clause());
+        return result;
+    }
+
+    Node atom() {
+        double r = Math.random();
+        if (r < 0.6) return term();
+        else return new NotNode(term());
+    }
+
+    Node term() {
+        double r = Math.random();
+        if (r < 0.7) return new VarNode( var() );
+        if (r < 0.8) return new ConstNode(true);
+        if (r < 0.9) return new ConstNode(false);
+        else return sent();
+    }
+
+    char var() {
+        double r = Math.random();
+        if (r < 0.10) return 'p';
+        if (r < 0.20) return 'q';
+        if (r < 0.30) return 'r';
+        if (r < 0.40) return 's';
+        if (r < 0.50) return 'u';
+        if (r < 0.60) return 'v';
+        if (r < 0.70) return 'w';
+        if (r < 0.80) return 'x';
+        if (r < 0.90) return 'y';
+        return 'z';
     }
 
 }
@@ -156,98 +272,100 @@ class Constant extends Sentence {
 /*
 The Grammar
 
-CFG: 
-    sent ::= 
-         |  sent '^' sent
-         |  sent '|' sent  
-         |  '(' sent ')'
-         |  '~' sent
-         |  const 
+    sent ::=
+      |  clause
+      |  clause '|' sent
 
-    const ::=
-         |  true
-         |  false
-         |  [a-z]{1}  
+    clause ::=
+      |  atom
+      |  atom '&' clause
 
-precedence:
-    ~ 
-    ^ 
-    |
+    atom ::=
+      |  term
+      |  '~' term
 
-Right-associative PEG:
-//lowest precedence first
-    A ::= 
-         B   
-      |  B | A
-    
-    B ::=
-         C
-      |  C ^ B 
-    
-    C ::=
-         D
-      |  '~' D
-
-    D ::=
-      |  '(' A ')'
-      | true
-      |  false
-      |  [a-z]{1}
+    term ::=
+      |   VAR
+      |  '(' sent ')'
+      |  'true'             # these could go into 'atom'
+      |  'false'            #
 
 */
 
-public class BooleanSentenceParser { 
-   
-    public Sentence A() throws Exception { 
-        Sentence B = B(); 
+public class BooleanSentenceParser {
+
+    String input;
+    Tokenizer str;
+    Node root;
+    HashMap<Character, Boolean> argList;
+    ArrayList<Character> vars;
+
+    public BooleanSentenceParser(Tokenizer str) {
+        this.input = str.in;
+        this.str = str;
+        this.vars = new ArrayList<Character>();
+        this.argList = new HashMap<Character, Boolean>();
+        try {
+            root = sent();
+        }
+        catch(Exception e) {
+            e.printStackTrace();
+        }
+        Collections.sort(vars);
+    }
+
+    public Node sent() throws Exception {
+        Node left = clause();
         Tok t = str.nextToken();
-        if (t == Tok.OR) return new Disjunction(B, A());    
-        else  { 
-            pushBack("A", t);
-            return B;
+        if (t == Tok.OR) return new OrNode(left, sent());
+        else if (t == Tok.RPAR || t == Tok.EOS)  {
+            pushBack("sent", t);
+            return left;
         }
+        else throw new Exception("ERROR: INVALID SYNTAX");
     }
 
-    public Sentence B() throws Exception { 
-        Sentence C = C();
-        Tok t = str.nextToken();   
-        if (t == Tok.AND) return new Conjunction(C, B()); 
+    public Node clause() throws Exception {
+        Node left = atom();
+        Tok t = str.nextToken();
+        if (t == Tok.AND) return new AndNode(left, clause());
         else {
-            pushBack("B", t);
-            return C;
+            pushBack("clause", t);
+            return left;
         }
     }
 
-    public Sentence C() throws Exception { 
-        Tok t = str.nextToken();   
-        if (t == Tok.NOT) return new Not( C() ); 
+    public Node atom() throws Exception {
+        Tok t = str.nextToken();
+        if (t == Tok.NOT) return new NotNode( term() );
         else {
-            pushBack("C", t);
-            return D();
+            pushBack("atom", t);
+            return term();
         }
     }
 
-    public Sentence D() throws Exception { 
-        Tok t = str.nextToken();   
+    public Node term() throws Exception {
+        Tok t = str.nextToken();
         if (t == Tok.VARIABLE) {
-            vars.add(str.name);
-            return new Variable(str.name); 
+            if (!vars.contains(str.name)) vars.add(str.name);
+            argList.put(str.name, null);
+            return new VarNode(str.name);
         }
         else if (t == Tok.LPAR) {
-            Sentence interior = A();
+            Node interior = sent();
             Tok t2 = str.nextToken();
             if (t2 != Tok.RPAR) throw new Exception("ERROR: EXPECTING RPAR");
             else return interior;
         }
-        else if (t == Tok.TRUE) return new Constant(true); 
-        else if (t == Tok.FALSE) return new Constant(false);
+        else if (t == Tok.TRUE) return new ConstNode(true);
+        else if (t == Tok.FALSE) return new ConstNode(false);
         else if (t == Tok.EOS) { //end of String
-            pushBack("D", t);    
+            pushBack("term", t);
             return null;
         }
         else if (t == Tok.INVALID) throw new Exception("ERROR: INVALID TOKEN");
         else if (t == Tok.UNDEF) throw new Exception("ERROR: NOT EXPECTING UNDEF");
-        else throw new Exception("UNREGONIZED ERROR");
+        else throw new Exception("INVALID SYNTAX");
     }
 
     public void pushBack(Tok token) {
@@ -260,76 +378,22 @@ public class BooleanSentenceParser {
         str.backToken = token;
     }
 
-    String input;
-    Tokenizer str;
-    Sentence root;
-    ArrayList<Character> vars;
-    ArrayList<Boolean> vals; 
-
-    public BooleanSentenceParser(Tokenizer str) { 
-        this.input = str.in;
-        this.str = str;
-        this.vars = new ArrayList<Character>();
-        this.vals = new ArrayList<Boolean>();
-        try { 
-            root = A();
-        }
-        catch(Exception e) { 
-            e.printStackTrace();
-        }
-    }
-
-    public static String generateFuzzTestString(int length) { 
-        char[] chars = {
-            'x', '1', '+', '-', '*', '/', '(', ')', '^'
-        };    
-        String str = "";    
-        for (int i=0; i<length; i++) { 
-            int pos = (int) (chars.length * Math.random());
-            str += chars[pos];
-        }
-        return str;
-    }
-
-    public static void fuzzTestParser(String[] args) {
-        if (args.length < 2) {
-            System.out.println("ERROR: expecting 2 arguments");
-            return;
-        }            
-        int num = Integer.parseInt(args[0]);
-        int len = Integer.parseInt(args[1]); 
-        for (int i=0; i<num; i++) { 
-            String s = "";
-            try { 
-                s = generateFuzzTestString(len);
-                System.out.println(s);
-                Tokenizer T = new Tokenizer(s);
-                BooleanSentenceParser P = new BooleanSentenceParser(T);
-                System.out.println(P.root.toString()); 
-            }       
-            catch(Exception e) { 
-                e.printStackTrace();
-            }
-        }
-    }
-
     public static void testParser(String[] args) {
         Tokenizer T = new Tokenizer(args[0]);
         BooleanSentenceParser P = new BooleanSentenceParser(T);
-        System.out.println(P.root.toString());
+        P.root.print();
     }
 
-    
     public static void testTokenizer(String[] args) {
         for (int i=0; i<args.length; i++) {
-            Tokenizer T = new Tokenizer(args[i]); 
+            Tokenizer T = new Tokenizer(args[i]);
             while (true) {
-                Tok t = T.nextToken(); 
+                Tok t = T.nextToken();
                 System.out.print(t);
                 if (t == Tok.VARIABLE) System.out.print(", " + T.name);
-                if (t == Tok.EOS) { 
+                if (t == Tok.EOS) {
                     System.out.println();
-                    break; 
+                    break;
                 }
                 System.out.println();
             }
@@ -339,19 +403,119 @@ public class BooleanSentenceParser {
     public static void testPrint(String[] args) {
         Tokenizer T = new Tokenizer(args[0]);
         BooleanSentenceParser P = new BooleanSentenceParser(T);
-        Sentence f = P.root;
-        f.print();
+        Node f = P.root;
+        f.print(0);
     }
 
-    public static void main(String[] args) { 
-        //testParser(args);
-        testTokenizer(args);
-        //testFunction(args);
-        //testOpCompareTo(args);
-        //testToString(args);
-        //testDeriv(args);
-        //testNewton(args);
+    public static void testToString(String[] args) {
+        Tokenizer T = new Tokenizer(args[0]);
+        BooleanSentenceParser P = new BooleanSentenceParser(T);
+        P.root.toString();
+    }
+
+    public static void testSort(String[] args) {
+        ArrayList<Character> vars = new ArrayList<Character>();
+        char[] chars = new char[args[0].length()];
+        args[0].getChars(0, args[0].length(), chars, 0);
+        for (char c : chars) vars.add(c);
+        print(vars);
+        System.out.println();
+        Collections.sort(vars);
+        print(vars);
+        System.out.println();
+    }
+
+    public static void print(ArrayList<Character> vars) {
+        for (char c : vars) System.out.print(c + " ");
+        System.out.println();
+    }
+
+    public static void testSAT(String[] args) throws Exception {
+        Tokenizer T = new Tokenizer(args[0]);
+        BooleanSentenceParser P = new BooleanSentenceParser(T);
+        Node sentence = P.root;
+        ArrayList<Character> vars = P.vars;
+        HashMap<Character, Boolean> argList = P.argList;
+        int n = vars.size();
+
+        sentence.print();
+        System.out.println();
+        print(vars);
+        System.out.println();
+
+        // enumerate all possible n-bit patterns
+        // that's the same as counting from 0 to 2^n-1
+        boolean satisfied = false;
+        if (n == 0) {
+            if (sentence.eval(argList)) System.out.println("true");
+            else System.out.println("false");
+        }
+        else {
+            for (int i = 0; i < (1<<n); i++) {
+                // i is the bit pattern
+
+                // assign the bits as truth values to the variables
+                for (int j=0; j<n; j++) {
+                    argList.put(vars.get(j), ( (i >> j) & 1) == 1 ? true : false);
+                }
+                if (sentence.eval(argList)) {
+                    satisfied = true;
+                    for (int l=0; l<n; l++) {
+                        System.out.println(vars.get(l) + " : " + (( (i >> l) & 1 )== 1 ? true : false) );
+                    }
+                    System.out.println();
+                }
+            }
+            if (!satisfied) System.out.println("no luck :(");
+        }
+    }
+
+    public static void testEval(String[] args) throws Exception {
+        Tokenizer T = new Tokenizer(args[0]);
+        BooleanSentenceParser P = new BooleanSentenceParser(T);
+        Node sentence = P.root;
+        ArrayList<Character> vars = P.vars;
+        HashMap<Character, Boolean> argList = P.argList;
+
+        sentence.print();
+        System.out.println();
+        print(vars);
+
+        for (int i = 1; i < args.length; i++) {
+            boolean b = Integer.parseInt(args[i]) == 1 ? true : false;
+            argList.put(vars.get(i-1), b);
+        }
+        System.out.println(sentence.eval(argList));
+    }
+
+    public static void randomTestParser(String[] args) {
+        try {
+            BooleanSentenceGenerator G = new BooleanSentenceGenerator();
+            Node sent = G.sent();
+            String s = sent.toString();
+            System.out.println("input = \n" + sent);
+            Tokenizer T = new Tokenizer(s);
+            BooleanSentenceParser P = new BooleanSentenceParser(T);
+            System.out.println(P.root.toString());
+        }
+        catch(Exception e) {
+             e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        try {
+            //randomTestParser(args);
+            testSAT(args);
+            //testEval(args);
+            //testParser(args);
+            //testSort(args);
+            //testTokenizer(args);
+            //testToString(args);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
 }
-
