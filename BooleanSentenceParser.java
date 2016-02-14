@@ -93,7 +93,9 @@ abstract class Node {
         for (int i=0; i<depth; i++) System.out.print(" ");
     }
 
-    public boolean eval(HashMap<Character, Boolean> argList, ArrayList<Character> vars, boolean... args) throws Exception {
+    public boolean eval(HashMap<Character, Boolean> argList, 
+                        ArrayList<Character> vars, boolean... args) throws Exception {
+
         if (args.length != argList.size()) throw new Exception("ERROR: INVALID NUMBER OF ARGUMENTS");
         for (int i=0; i<vars.size(); i++) {
             argList.put(vars.get(i), args[i]);
@@ -225,17 +227,17 @@ class ConstNode extends Node {
 
 class BooleanSentenceGenerator {
 
-    Node sent() {
-        Node result = clause();
+    Node orExpr() {
+        Node result = andExpr();
         while (Math.random() < 0.33) {
-            result = new OrNode(result, sent());
+            result = new OrNode(result, orExpr());
         }
         return result;
     }
 
-    Node clause() {
+    Node andExpr() {
         Node result = atom();
-        while (Math.random() < 0.33) result = new AndNode(result, clause());
+        while (Math.random() < 0.33) result = new AndNode(result, andExpr());
         return result;
     }
 
@@ -250,7 +252,7 @@ class BooleanSentenceGenerator {
         if (r < 0.7) return new VarNode( var() );
         if (r < 0.8) return new ConstNode(true);
         if (r < 0.9) return new ConstNode(false);
-        else return sent();
+        else return orExpr();
     }
 
     char var() {
@@ -272,13 +274,13 @@ class BooleanSentenceGenerator {
 /*
 The Grammar
 
-    sent ::=
-      |  clause
-      |  clause '|' sent
+    orExpr ::=
+      |  andExpr
+      |  andExpr '|' orExpr
 
-    clause ::=
+    andExpr ::=
       |  atom
-      |  atom '&' clause
+      |  atom '&' andExpr
 
     atom ::=
       |  term
@@ -286,7 +288,7 @@ The Grammar
 
     term ::=
       |   VAR
-      |  '(' sent ')'
+      |  '(' orExpr ')'
       |  'true'             # these could go into 'atom'
       |  'false'            #
 
@@ -306,7 +308,7 @@ public class BooleanSentenceParser {
         this.vars = new ArrayList<Character>();
         this.argList = new HashMap<Character, Boolean>();
         try {
-            root = sent();
+            root = orExpr();
         }
         catch(Exception e) {
             e.printStackTrace();
@@ -314,23 +316,23 @@ public class BooleanSentenceParser {
         Collections.sort(vars);
     }
 
-    public Node sent() throws Exception {
-        Node left = clause();
+    public Node orExpr() throws Exception {
+        Node left = andExpr();
         Tok t = str.nextToken();
-        if (t == Tok.OR) return new OrNode(left, sent());
+        if (t == Tok.OR) return new OrNode(left, orExpr());
         else if (t == Tok.RPAR || t == Tok.EOS)  {
-            pushBack("sent", t);
+            pushBack("orExpr", t);
             return left;
         }
         else throw new Exception("ERROR: INVALID SYNTAX");
     }
 
-    public Node clause() throws Exception {
+    public Node andExpr() throws Exception {
         Node left = atom();
         Tok t = str.nextToken();
-        if (t == Tok.AND) return new AndNode(left, clause());
+        if (t == Tok.AND) return new AndNode(left, andExpr());
         else {
-            pushBack("clause", t);
+            pushBack("andExpr", t);
             return left;
         }
     }
@@ -352,7 +354,7 @@ public class BooleanSentenceParser {
             return new VarNode(str.name);
         }
         else if (t == Tok.LPAR) {
-            Node interior = sent();
+            Node interior = orExpr();
             Tok t2 = str.nextToken();
             if (t2 != Tok.RPAR) throw new Exception("ERROR: EXPECTING RPAR");
             else return interior;
@@ -433,12 +435,12 @@ public class BooleanSentenceParser {
     public static void testSAT(String[] args) throws Exception {
         Tokenizer T = new Tokenizer(args[0]);
         BooleanSentenceParser P = new BooleanSentenceParser(T);
-        Node sentence = P.root;
+        Node orExprence = P.root;
         ArrayList<Character> vars = P.vars;
         HashMap<Character, Boolean> argList = P.argList;
         int n = vars.size();
 
-        sentence.print();
+        orExprence.print();
         System.out.println();
         print(vars);
         System.out.println();
@@ -447,7 +449,7 @@ public class BooleanSentenceParser {
         // that's the same as counting from 0 to 2^n-1
         boolean satisfied = false;
         if (n == 0) {
-            if (sentence.eval(argList)) System.out.println("true");
+            if (orExprence.eval(argList)) System.out.println("true");
             else System.out.println("false");
         }
         else {
@@ -458,7 +460,7 @@ public class BooleanSentenceParser {
                 for (int j=0; j<n; j++) {
                     argList.put(vars.get(j), ( (i >> j) & 1) == 1 ? true : false);
                 }
-                if (sentence.eval(argList)) {
+                if (orExprence.eval(argList)) {
                     satisfied = true;
                     for (int l=0; l<n; l++) {
                         System.out.println(vars.get(l) + " : " + (( (i >> l) & 1 )== 1 ? true : false) );
@@ -473,11 +475,11 @@ public class BooleanSentenceParser {
     public static void testEval(String[] args) throws Exception {
         Tokenizer T = new Tokenizer(args[0]);
         BooleanSentenceParser P = new BooleanSentenceParser(T);
-        Node sentence = P.root;
+        Node orExprence = P.root;
         ArrayList<Character> vars = P.vars;
         HashMap<Character, Boolean> argList = P.argList;
 
-        sentence.print();
+        orExprence.print();
         System.out.println();
         print(vars);
 
@@ -485,15 +487,15 @@ public class BooleanSentenceParser {
             boolean b = Integer.parseInt(args[i]) == 1 ? true : false;
             argList.put(vars.get(i-1), b);
         }
-        System.out.println(sentence.eval(argList));
+        System.out.println(orExprence.eval(argList));
     }
 
     public static void randomTestParser(String[] args) {
         try {
             BooleanSentenceGenerator G = new BooleanSentenceGenerator();
-            Node sent = G.sent();
-            String s = sent.toString();
-            System.out.println("input = \n" + sent);
+            Node orExpr = G.orExpr();
+            String s = orExpr.toString();
+            System.out.println("input = \n" + orExpr);
             Tokenizer T = new Tokenizer(s);
             BooleanSentenceParser P = new BooleanSentenceParser(T);
             System.out.println(P.root.toString());
